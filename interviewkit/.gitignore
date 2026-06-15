@@ -8,6 +8,9 @@ dist
 dist-ssr
 *.local
 
+# TypeScript incremental build cache
+*.tsbuildinfo
+
 # Environment — ne jamais committer la clé API
 .env
 .env.local

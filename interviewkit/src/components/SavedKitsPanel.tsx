@@ -86,7 +86,7 @@ export default function SavedKitsPanel({
 
   return (
     <aside
-      className="no-print fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-slate-200 bg-white shadow-2xl sm:w-[480px] lg:w-[46%] dark:border-slate-700 dark:bg-slate-800"
+      className="no-print fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-slate-200 bg-white shadow-2xl sm:w-[360px] lg:w-[34%] xl:w-[30%] dark:border-slate-700 dark:bg-slate-800"
       role="dialog"
       aria-modal="true"
       aria-label="Mes kits sauvegardés"
