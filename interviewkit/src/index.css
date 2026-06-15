@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #f8fafc;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+html.dark body {
+  background-color: #0f172a;
+  color: #e2e8f0;
+}
+
+/* En-tête répété sur chaque page du PDF (caché à l'écran). */
+.print-running-header {
+  display: none;
+}
+
+/* ----------------------------------------------------------------------------
+   Feuille de style dédiée à l'impression / export PDF (window.print()).
+   On masque toute la chrome de l'app et on met en page proprement le kit.
+---------------------------------------------------------------------------- */
+@media print {
+  /* Forcer un rendu clair à l'impression, même en dark mode. */
+  html.dark body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* Tout est caché par défaut sauf ce qui est explicitement imprimable */
+  .no-print,
+  .live-mode {
+    display: none !important;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  .print-area {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+    box-shadow: none !important;
+  }
+
+  /* Paddings de cartes réduits (sans toucher à la taille de police). */
+  .print-section,
+  .kit-header {
+    padding: 0.4cm !important;
+    box-shadow: none !important;
+  }
+
+  /* Annotations : tout le texte saisi est visible dans le PDF (hauteur auto). */
+  .print-area textarea {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Les verdicts colorés (vert/jaune/rouge) restent visibles à l'impression. */
+  .synthesis-section button[aria-pressed='true'] {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* En-tête personnalisé : une seule ligne bleue, dans le flux (aucun chevauchement). */
+  .print-running-header {
+    display: block;
+    position: static !important;
+    margin: 0 0 0.8cm !important;
+    padding: 0 0 0.2cm !important;
+    font-weight: 700;
+    color: #4f46e5;
+    background: transparent;
+    border-bottom: 1px solid #4f46e5;
+  }
+
+  /* Chaque grande section commence sur une nouvelle page… */
+  .print-section {
+    page-break-before: always;
+    break-before: page;
+  }
+  /* …sauf la première (reste avec l'en-tête candidat). */
+  .print-section:first-of-type {
+    page-break-before: avoid;
+    break-before: avoid;
+  }
+  /* En mode « synthèse seule », la synthèse ne doit pas démarrer par une page vide. */
+  body.print-synthesis .synthesis-section {
+    page-break-before: auto;
+    break-before: auto;
+  }
+
+  /* Aucun bloc question + annotation + scoring ne doit être coupé. */
+  .print-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Les cases de scoring restent visibles et nettes à l'impression */
+  .score-box {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Export « synthèse seule » : on ne garde que la section de synthèse. */
+  body.print-synthesis .kit-header,
+  body.print-synthesis .print-section:not(.synthesis-section) {
+    display: none !important;
+  }
+
+  a[href]::after {
+    content: '';
+  }
+
+  @page {
+    margin: 1.5cm;
+  }
+}
