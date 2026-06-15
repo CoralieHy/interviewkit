@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
-import Form from './components/Form'
-import KitDisplay from './components/KitDisplay'
-import GeneratingView from './components/GeneratingView'
-import LiveMode from './components/LiveMode'
-import CvPanel from './components/CvPanel'
-import SavedKitsPanel from './components/SavedKitsPanel'
+import { useEffect, useMemo, useState, lazy, Suspense } from 'react'
+
+const Form = lazy(() => import('./components/Form'))
+const KitDisplay = lazy(() => import('./components/KitDisplay'))
+const GeneratingView = lazy(() => import('./components/GeneratingView'))
+const LiveMode = lazy(() => import('./components/LiveMode'))
+const CvPanel = lazy(() => import('./components/CvPanel'))
+const SavedKitsPanel = lazy(() => import('./components/SavedKitsPanel'))
 import { generateKitStream, hasApiKey, KitError } from './api'
 import { loadRecords, saveRecords, newId } from './storage'
 import { checkRateLimit, recordGeneration } from './rateLimit'
@@ -168,6 +169,7 @@ export default function App() {
   const showKit = view === 'kit' && current
 
   return (
+  <Suspense fallback={<div className="min-h-screen" />}>
     <div className="min-h-full">
       {/* En-tête */}
       <header
@@ -381,5 +383,6 @@ export default function App() {
         />
       )}
     </div>
+    </Suspense>
   )
 }
