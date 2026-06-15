@@ -10,7 +10,8 @@ export interface FormData {
   poste: string
   competences: string
   profil: string
-  typeEntretien: InterviewType
+  /** '' = aucun type sélectionné (formulaire vierge). */
+  typeEntretien: InterviewType | ''
 }
 
 /** Une question posée par le candidat + une suggestion de réponse pour l'intervieweur. */

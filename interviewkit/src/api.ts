@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { FormData, InterviewKit } from './types'
+import type { FormData, InterviewKit, InterviewType } from './types'
 import { INTERVIEW_TYPE_LABELS } from './types'
 
 // Limites de validation (sécurité : bornes strictes côté client).
@@ -55,6 +55,8 @@ export function validateForm(form: FormData): string | null {
   if (profil.length > LIMITS.profil)
     return `Le résumé du profil ne doit pas dépasser ${LIMITS.profil} caractères.`
 
+  if (!form.typeEntretien) return "Le type d'entretien est obligatoire."
+
   return null
 }
 
@@ -73,7 +75,7 @@ function buildUserPrompt(form: FormData): string {
 Intitulé du poste : ${form.poste.trim()}
 Compétences clés recherchées : ${form.competences.trim()}
 Résumé du profil candidat : ${profil}
-Type d'entretien : ${INTERVIEW_TYPE_LABELS[form.typeEntretien]}
+Type d'entretien : ${INTERVIEW_TYPE_LABELS[form.typeEntretien as InterviewType]}
 
 Adapte le ton et la profondeur des questions au type d'entretien indiqué.
 
@@ -374,6 +376,71 @@ export async function generateKitStream(
       throw new KitError("Réponse vide de l'IA. Merci de réessayer.")
     }
     return parseKit(textBlock.text)
+  } catch (err) {
+    throw friendlyError(err)
+  }
+}
+
+export interface RegenerateOptions {
+  poste: string
+  competences: string
+  profil: string
+  typeEntretien: InterviewType
+  categoryLabel: string
+  categoryDescription: string
+  /** Questions déjà présentes dans la catégorie (à ne pas répéter). */
+  existing: string[]
+}
+
+/**
+ * Régénère UNE seule question via l'IA, en conservant le contexte du poste et
+ * du candidat, sans toucher au reste du kit.
+ */
+export async function regenerateQuestion(opts: RegenerateOptions): Promise<string> {
+  const apiKey = getApiKey()
+  if (!apiKey) {
+    throw new KitError(
+      'Clé API absente. Configurez la variable VITE_ANTHROPIC_API_KEY.',
+    )
+  }
+
+  const profil = opts.profil.trim() || 'Non communiqué'
+  const existingList = opts.existing.length
+    ? opts.existing.map((q) => `- ${q}`).join('\n')
+    : '- (aucune)'
+
+  const prompt = `Contexte de l'entretien :
+Intitulé du poste : ${opts.poste}
+Compétences clés recherchées : ${opts.competences}
+Résumé du profil candidat : ${profil}
+Type d'entretien : ${INTERVIEW_TYPE_LABELS[opts.typeEntretien]}
+
+Catégorie de la question : ${opts.categoryLabel} — ${opts.categoryDescription}
+
+Questions déjà présentes dans cette catégorie (à NE PAS répéter, ni reformuler) :
+${existingList}
+
+Génère UNE seule nouvelle question d'entretien pour cette catégorie : ouverte, précise, ancrée dans le contexte ci-dessus, et différente de toutes les questions listées.
+Réponds UNIQUEMENT avec le texte de la question, en français, sans numéro, sans guillemets, sans préambule ni commentaire.`
+
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
+
+  try {
+    const response = await client.messages.create({
+      model: MODEL,
+      max_tokens: 400,
+      messages: [{ role: 'user', content: prompt }],
+    })
+    const textBlock = response.content.find((b) => b.type === 'text')
+    if (!textBlock || textBlock.type !== 'text') {
+      throw new KitError("Réponse vide de l'IA. Merci de réessayer.")
+    }
+    // Nettoyage : retire guillemets englobants, numérotation ou puce de tête.
+    let q = textBlock.text.trim()
+    q = q.replace(/^["'«»\s]+/, '').replace(/["'«»\s]+$/, '')
+    q = q.replace(/^\d+[).\s-]+/, '').trim()
+    if (!q) throw new KitError('La question régénérée est vide. Réessayez.')
+    return q
   } catch (err) {
     throw friendlyError(err)
   }

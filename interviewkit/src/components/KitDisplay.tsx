@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import DOMPurify from 'dompurify'
-import type { KitRecord, Verdict } from '../types'
+import type { CategoryKey, KitRecord, Verdict } from '../types'
 import { CATEGORIES, INTERVIEW_TYPE_LABELS } from '../types'
 import { questionId } from '../scoring'
 import { candidateName } from '../storage'
 import ScoreSelector from './ScoreSelector'
 import AutoTextarea from './AutoTextarea'
+import QuestionActions from './QuestionActions'
 import Synthesis from './Synthesis'
 
 interface KitDisplayProps {
@@ -14,6 +15,9 @@ interface KitDisplayProps {
   onReset: () => void
   onOpenCv: () => void
   onStartLive: () => void
+  onDeleteQuestion: (catKey: CategoryKey, index: number) => void
+  onRegenerateQuestion: (catKey: CategoryKey, index: number) => void
+  regeneratingIds: Set<string>
 }
 
 /** Nettoie le contenu généré avant affichage (sécurité : anti-injection HTML). */
@@ -48,6 +52,9 @@ export default function KitDisplay({
   onReset,
   onOpenCv,
   onStartLive,
+  onDeleteQuestion,
+  onRegenerateQuestion,
+  regeneratingIds,
 }: KitDisplayProps) {
   const setScore = (id: string, v: number | undefined) => {
     const scores = { ...record.scores }
@@ -188,10 +195,19 @@ export default function KitDisplay({
                         </span>
                         {clean(q)}
                       </p>
-                      <ScoreSelector
-                        value={record.scores[id]}
-                        onChange={(v) => setScore(id, v)}
-                      />
+                      <div className="flex shrink-0 items-center gap-2">
+                        <ScoreSelector
+                          value={record.scores[id]}
+                          onChange={(v) => setScore(id, v)}
+                        />
+                        <QuestionActions
+                          catKey={cat.key}
+                          index={i}
+                          onDelete={onDeleteQuestion}
+                          onRegenerate={onRegenerateQuestion}
+                          regenerating={regeneratingIds.has(id)}
+                        />
+                      </div>
                     </div>
                     <AutoTextarea
                       rows={2}

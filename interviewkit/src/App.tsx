@@ -6,10 +6,57 @@ const GeneratingView = lazy(() => import('./components/GeneratingView'))
 const LiveMode = lazy(() => import('./components/LiveMode'))
 const CvPanel = lazy(() => import('./components/CvPanel'))
 const SavedKitsPanel = lazy(() => import('./components/SavedKitsPanel'))
-import { generateKitStream, hasApiKey, KitError } from './api'
+import { generateKitStream, regenerateQuestion, hasApiKey, KitError } from './api'
 import { loadRecords, saveRecords, newId } from './storage'
 import { checkRateLimit, recordGeneration } from './rateLimit'
-import type { FormData, InterviewKit, KitRecord } from './types'
+import { CATEGORIES } from './types'
+import type {
+  CategoryKey,
+  FormData,
+  InterviewKit,
+  InterviewType,
+  KitRecord,
+} from './types'
+
+/** Formulaire vierge (réinitialisation « Nouveau kit »). */
+const EMPTY_FORM: FormData = {
+  prenom: '',
+  nom: '',
+  poste: '',
+  competences: '',
+  profil: '',
+  typeEntretien: '',
+}
+
+/** Décale les clés `<cat>-<index>` d'une map après suppression d'un index. */
+function shiftCategoryKeys<T>(
+  map: Record<string, T>,
+  catKey: string,
+  removedIndex: number,
+): Record<string, T> {
+  const out: Record<string, T> = {}
+  const prefix = `${catKey}-`
+  for (const [k, v] of Object.entries(map)) {
+    if (!k.startsWith(prefix)) {
+      out[k] = v
+      continue
+    }
+    const idx = Number(k.slice(prefix.length))
+    if (Number.isNaN(idx)) out[k] = v
+    else if (idx === removedIndex) continue // supprimé
+    else if (idx > removedIndex) out[`${catKey}-${idx - 1}`] = v
+    else out[k] = v
+  }
+  return out
+}
+
+/** Retire une clé d'une map (immutable). */
+function withoutKey<T>(map: Record<string, T>, id: string): Record<string, T> {
+  if (!(id in map)) return map
+  const copy = { ...map }
+  delete copy[id]
+  return copy
+}
 
 // Données de démo réalistes pré-remplies.
 const DEMO_FORM: FormData = {
@@ -51,6 +98,8 @@ export default function App() {
   )
   const [error, setError] = useState<string | null>(null)
   const [theme, setTheme] = useState<Theme>(() => initialTheme())
+  // Identifiants `<cat>-<index>` des questions en cours de régénération.
+  const [regenIds, setRegenIds] = useState<Set<string>>(() => new Set())
 
   const apiKeyMissing = !hasApiKey()
   const cvOpen = panel === 'cv'
@@ -117,7 +166,7 @@ export default function App() {
         poste: form.poste.trim(),
         competences: form.competences.trim(),
         profil: form.profil.trim(),
-        typeEntretien: form.typeEntretien,
+        typeEntretien: form.typeEntretien as InterviewType,
         kit,
         scores: {},
         notes: {},
@@ -142,11 +191,77 @@ export default function App() {
   }
 
   const handleNewKit = () => {
+    setForm(EMPTY_FORM)
     setView('form')
     setError(null)
     setPanel('none')
     clearCv()
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const deleteQuestion = (catKey: CategoryKey, index: number) => {
+    setRecords((rs) =>
+      rs.map((r) => {
+        if (r.id !== currentId) return r
+        const questions = r.kit[catKey].filter((_, i) => i !== index)
+        return {
+          ...r,
+          kit: { ...r.kit, [catKey]: questions },
+          scores: shiftCategoryKeys(r.scores, catKey, index),
+          notes: shiftCategoryKeys(r.notes, catKey, index),
+        }
+      }),
+    )
+  }
+
+  const handleRegenerateQuestion = async (
+    catKey: CategoryKey,
+    index: number,
+  ) => {
+    if (!current) return
+    const id = `${catKey}-${index}`
+    const cat = CATEGORIES.find((c) => c.key === catKey)
+    if (!cat) return
+    setError(null)
+    setRegenIds((s) => new Set(s).add(id))
+    try {
+      const question = await regenerateQuestion({
+        poste: current.poste,
+        competences: current.competences,
+        profil: current.profil,
+        typeEntretien: current.typeEntretien,
+        categoryLabel: cat.label,
+        categoryDescription: cat.description,
+        existing: current.kit[catKey],
+      })
+      setRecords((rs) =>
+        rs.map((r) => {
+          if (r.id !== currentId) return r
+          const questions = r.kit[catKey].map((old, i) =>
+            i === index ? question : old,
+          )
+          // La question change : on remet à zéro sa note et son annotation.
+          return {
+            ...r,
+            kit: { ...r.kit, [catKey]: questions },
+            scores: withoutKey(r.scores, id),
+            notes: withoutKey(r.notes, id),
+          }
+        }),
+      )
+    } catch (err) {
+      setError(
+        err instanceof KitError
+          ? err.message
+          : 'Échec de la régénération de la question. Merci de réessayer.',
+      )
+    } finally {
+      setRegenIds((s) => {
+        const n = new Set(s)
+        n.delete(id)
+        return n
+      })
+    }
   }
 
   const handleReopen = (id: string) => {
@@ -318,6 +433,9 @@ export default function App() {
             onReset={handleNewKit}
             onOpenCv={() => setPanel('cv')}
             onStartLive={() => setView('live')}
+            onDeleteQuestion={deleteQuestion}
+            onRegenerateQuestion={handleRegenerateQuestion}
+            regeneratingIds={regenIds}
           />
         ) : (
           <>
@@ -353,6 +471,9 @@ export default function App() {
           record={current}
           onUpdate={updateCurrent}
           onExit={() => setView('kit')}
+          onDeleteQuestion={deleteQuestion}
+          onRegenerateQuestion={handleRegenerateQuestion}
+          regeneratingIds={regenIds}
         />
       )}
 

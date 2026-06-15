@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
-import type { KitRecord } from '../types'
+import type { CategoryKey, KitRecord } from '../types'
 import { CATEGORIES } from '../types'
 import { questionId } from '../scoring'
 import ScoreSelector from './ScoreSelector'
 import AutoTextarea from './AutoTextarea'
+import QuestionActions from './QuestionActions'
 
 interface LiveModeProps {
   record: KitRecord
   onUpdate: (patch: Partial<KitRecord>) => void
   onExit: () => void
+  onDeleteQuestion: (catKey: CategoryKey, index: number) => void
+  onRegenerateQuestion: (catKey: CategoryKey, index: number) => void
+  regeneratingIds: Set<string>
 }
 
 function clean(text: string): string {
@@ -18,6 +22,8 @@ function clean(text: string): string {
 
 interface FlatQuestion {
   id: string
+  catKey: CategoryKey
+  index: number
   category: string
   text: string
 }
@@ -31,12 +37,25 @@ function mmss(total: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export default function LiveMode({ record, onUpdate, onExit }: LiveModeProps) {
+export default function LiveMode({
+  record,
+  onUpdate,
+  onExit,
+  onDeleteQuestion,
+  onRegenerateQuestion,
+  regeneratingIds,
+}: LiveModeProps) {
   const questions = useMemo<FlatQuestion[]>(() => {
     const list: FlatQuestion[] = []
     CATEGORIES.forEach((cat) => {
       record.kit[cat.key].forEach((q, i) => {
-        list.push({ id: questionId(cat.key, i), category: cat.label, text: q })
+        list.push({
+          id: questionId(cat.key, i),
+          catKey: cat.key,
+          index: i,
+          category: cat.label,
+          text: q,
+        })
       })
     })
     return list
@@ -79,6 +98,13 @@ export default function LiveMode({ record, onUpdate, onExit }: LiveModeProps) {
     return () => clearInterval(t)
   }, [paused, secondsLeft])
 
+  // Borne l'index si la liste rétrécit (suppression de question).
+  useEffect(() => {
+    if (index > questions.length - 1) {
+      setIndex(Math.max(0, questions.length - 1))
+    }
+  }, [questions.length, index])
+
   // Swipe tactile (mobile).
   const touchX = useRef<number | null>(null)
   const onTouchStart = (e: React.TouchEvent) => {
@@ -94,9 +120,34 @@ export default function LiveMode({ record, onUpdate, onExit }: LiveModeProps) {
     touchX.current = null
   }
 
-  const current = questions[index]
-  const isFirst = index === 0
-  const isLast = index === questions.length - 1
+  // Indices bornés (la liste peut rétrécir après une suppression).
+  const safeIndex = Math.min(index, Math.max(0, questions.length - 1))
+  const current = questions[safeIndex]
+
+  if (!current) {
+    return (
+      <div
+        className="live-mode no-print fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-slate-50 p-6 text-center dark:bg-slate-900"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Mode entretien live"
+      >
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          Toutes les questions ont été supprimées.
+        </p>
+        <button
+          type="button"
+          onClick={onExit}
+          className="rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md transition hover:bg-brand-600"
+        >
+          Revenir au kit
+        </button>
+      </div>
+    )
+  }
+
+  const isFirst = safeIndex === 0
+  const isLast = safeIndex === questions.length - 1
   const danger = secondsLeft <= 30
 
   const setScore = (v: number | undefined) => {
@@ -123,7 +174,7 @@ export default function LiveMode({ record, onUpdate, onExit }: LiveModeProps) {
             {clean(current.category)}
           </p>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Question {index + 1} / {questions.length}
+            Question {safeIndex + 1} / {questions.length}
           </p>
         </div>
 
@@ -195,11 +246,21 @@ export default function LiveMode({ record, onUpdate, onExit }: LiveModeProps) {
           </p>
 
           <div className="mx-auto mt-10 flex max-w-xl flex-col items-center gap-4">
-            <ScoreSelector
-              value={record.scores[current.id]}
-              onChange={setScore}
-              size="lg"
-            />
+            <div className="flex items-center gap-3">
+              <ScoreSelector
+                value={record.scores[current.id]}
+                onChange={setScore}
+                size="lg"
+              />
+              <QuestionActions
+                catKey={current.catKey}
+                index={current.index}
+                onDelete={onDeleteQuestion}
+                onRegenerate={onRegenerateQuestion}
+                regenerating={regeneratingIds.has(current.id)}
+                size="lg"
+              />
+            </div>
             <AutoTextarea
               rows={3}
               value={record.notes[current.id] ?? ''}
