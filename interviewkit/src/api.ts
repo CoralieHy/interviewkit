@@ -147,9 +147,27 @@ function parseKit(raw: string): InterviewKit {
   }
 }
 
+/** Extrait le message d'erreur réel renvoyé par l'API (corps JSON). */
+function extractApiDetail(err: InstanceType<typeof Anthropic.APIError>): string | undefined {
+  const anyErr = err as { error?: unknown; message?: unknown }
+  const body = anyErr.error as
+    | { error?: { message?: unknown }; message?: unknown }
+    | undefined
+  const nested = body?.error?.message
+  if (typeof nested === 'string' && nested.trim()) return nested.trim()
+  const top = body?.message
+  if (typeof top === 'string' && top.trim()) return top.trim()
+  if (typeof err.message === 'string' && err.message.trim())
+    return err.message.trim()
+  return undefined
+}
+
 /** Traduit une erreur SDK en message utilisateur clair. */
 function friendlyError(err: unknown): KitError {
   if (err instanceof KitError) return err
+
+  // Trace complète en console pour le diagnostic développeur.
+  console.error('[InterviewKit] Erreur API Anthropic :', err)
 
   if (err instanceof Anthropic.AuthenticationError) {
     return new KitError(
@@ -172,8 +190,19 @@ function friendlyError(err: unknown): KitError {
     )
   }
   if (err instanceof Anthropic.APIError) {
+    const detail = extractApiDetail(err)
+    const status = err.status ?? 'inconnue'
+    // Cas fréquent : clé valide mais compte sans crédit → 400 invalid_request_error.
+    if (detail && /credit balance|crédit/i.test(detail)) {
+      return new KitError(
+        `Crédit Anthropic insuffisant pour ce compte. Ajoutez du crédit dans la console Anthropic (Plans & Billing), puis réessayez. (Détail API : ${detail})`,
+      )
+    }
+    if (detail) {
+      return new KitError(`Erreur de l'API (${status}) : ${detail}`)
+    }
     return new KitError(
-      `Erreur de l'API (${err.status ?? 'inconnue'}). Merci de réessayer.`,
+      `Erreur de l'API (${status}). Merci de réessayer.`,
     )
   }
   return new KitError('Une erreur inattendue est survenue. Merci de réessayer.')
